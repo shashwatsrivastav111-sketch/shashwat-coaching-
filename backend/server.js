@@ -2,6 +2,7 @@ const express = require("express");
 const mongoose = require("mongoose");
 const cors = require("cors");
 const path = require("path");
+const fs = require("fs");
 require("dotenv").config({ path: path.resolve(__dirname, ".env") });
 
 const enquiryRoutes = require("./routes/enquiryRoutes");
@@ -14,10 +15,48 @@ const PORT = process.env.PORT || 5001;
 app.use(cors());
 app.use(express.json());
 
-// Serve frontend static files
+// Serve frontend static files (supporting root, public, and parent locations)
+app.use(express.static(path.resolve(__dirname, "public")));
 app.use(express.static(path.resolve(__dirname, "..")));
+app.use(express.static(__dirname));
 
-// Routes
+// Explicit Root Route
+app.get("/", (req, res) => {
+    const publicIndex = path.resolve(__dirname, "public", "index.html");
+    const parentIndex = path.resolve(__dirname, "..", "index.html");
+    const localIndex = path.resolve(__dirname, "index.html");
+
+    if (fs.existsSync(publicIndex)) {
+        return res.sendFile(publicIndex);
+    } else if (fs.existsSync(parentIndex)) {
+        return res.sendFile(parentIndex);
+    } else if (fs.existsSync(localIndex)) {
+        return res.sendFile(localIndex);
+    } else {
+        return res.send(`
+            <div style="font-family:sans-serif; text-align:center; padding:50px;">
+                <h2>Shashwat Coaching Centre API is Running!</h2>
+                <p>Status: OK</p>
+            </div>
+        `);
+    }
+});
+
+// Admin Route Direct Shortcut
+app.get("/admin", (req, res) => {
+    const publicAdmin = path.resolve(__dirname, "public", "admin.html");
+    const parentAdmin = path.resolve(__dirname, "..", "admin.html");
+
+    if (fs.existsSync(publicAdmin)) {
+        return res.sendFile(publicAdmin);
+    } else if (fs.existsSync(parentAdmin)) {
+        return res.sendFile(parentAdmin);
+    } else {
+        return res.redirect("/admin.html");
+    }
+});
+
+// API Routes
 app.use("/api/enquiries", enquiryRoutes);
 app.use("/api/notices", noticeRoutes);
 
@@ -36,10 +75,12 @@ app.get("/api/health", (req, res) => {
     });
 });
 
-// Start listening immediately
-app.listen(PORT, () => {
-    console.log(`🚀 Shashwat Coaching Backend running at http://localhost:${PORT}`);
-});
+// Start listening (in local/standard server environments)
+if (!process.env.VERCEL) {
+    app.listen(PORT, () => {
+        console.log(`🚀 Shashwat Coaching Backend running at http://localhost:${PORT}`);
+    });
+}
 
 // Connect to MongoDB
 if (process.env.MONGO_URI) {
@@ -58,3 +99,6 @@ if (process.env.MONGO_URI) {
 } else {
     console.warn("⚠️  MONGO_URI not specified in .env. Running in offline/in-memory mode.");
 }
+
+// Export for Vercel Serverless Functions
+module.exports = app;
