@@ -128,7 +128,7 @@
             border-color: var(--primary);
         }
 
-        /* Enquiries Table / Cards */
+        /* Enquiries Table */
         .leads-table-container {
             background: white;
             border-radius: 12px;
@@ -234,10 +234,182 @@
             color: #cbd5e1;
             margin-bottom: 12px;
         }
+
+        /* Security Gate / Authentication Overlay */
+        .admin-auth-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(15, 23, 42, 0.95);
+            backdrop-filter: blur(8px);
+            z-index: 3000;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+
+        .auth-card {
+            background: white;
+            max-width: 440px;
+            width: 100%;
+            border-radius: 16px;
+            padding: 35px 30px;
+            text-align: center;
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+            animation: authPop 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+
+        @keyframes authPop {
+            from { transform: scale(0.92); opacity: 0; }
+            to { transform: scale(1); opacity: 1; }
+        }
+
+        .auth-icon {
+            width: 65px;
+            height: 65px;
+            background: #e0f2fe;
+            color: var(--primary);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 28px;
+            margin: 0 auto 18px;
+            border: 4px solid #f0f9ff;
+        }
+
+        .auth-card h2 {
+            font-size: 22px;
+            color: #0f172a;
+            margin-bottom: 8px;
+        }
+
+        .auth-card p {
+            font-size: 13.5px;
+            color: #64748b;
+            margin-bottom: 22px;
+            line-height: 1.5;
+        }
+
+        .auth-input-group {
+            position: relative;
+            margin-bottom: 16px;
+        }
+
+        .auth-input-group i:first-child {
+            position: absolute;
+            left: 14px;
+            top: 50%;
+            transform: translateY(-50%);
+            color: #94a3b8;
+            font-size: 14px;
+        }
+
+        .auth-input-group input {
+            width: 100%;
+            padding: 13px 42px 13px 38px;
+            font-size: 15px;
+            border-radius: 8px;
+            border: 1px solid #cbd5e1;
+            outline: none;
+        }
+
+        .auth-input-group input:focus {
+            border-color: var(--primary);
+            box-shadow: 0 0 0 3px rgba(29, 78, 216, 0.15);
+        }
+
+        .toggle-pwd-btn {
+            position: absolute;
+            right: 12px;
+            top: 50%;
+            transform: translateY(-50%);
+            background: none;
+            border: none;
+            color: #94a3b8;
+            cursor: pointer;
+            font-size: 15px;
+            padding: 4px;
+        }
+
+        .toggle-pwd-btn:hover {
+            color: #334155;
+        }
+
+        .auth-submit-btn {
+            width: 100%;
+            padding: 13px;
+            background: var(--primary);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 15px;
+            font-weight: 700;
+            cursor: pointer;
+            transition: 0.25s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+        }
+
+        .auth-submit-btn:hover {
+            background: var(--primary-dark);
+        }
+
+        .auth-error-msg {
+            margin-top: 12px;
+            font-size: 13px;
+            color: #dc2626;
+            background: #fee2e2;
+            padding: 8px 12px;
+            border-radius: 6px;
+            display: none;
+        }
+
+        .auth-footer-badge {
+            margin-top: 20px;
+            padding-top: 15px;
+            border-top: 1px solid #f1f5f9;
+            font-size: 11.5px;
+            color: #94a3b8;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 6px;
+        }
     </style>
 </head>
 <body class="admin-body">
 
+    <!-- Security Gate Authentication Screen -->
+    <div id="adminAuthOverlay" class="admin-auth-overlay" style="display: flex;">
+        <div class="auth-card">
+            <div class="auth-icon"><i class="fas fa-shield-alt"></i></div>
+            <h2>Admin Security Gate</h2>
+            <p>This portal contains sensitive student records and contact details. Enter your admin passcode to unlock.</p>
+            <form id="adminLoginForm">
+                <div class="auth-input-group">
+                    <i class="fas fa-key"></i>
+                    <input type="password" id="adminPasswordInput" placeholder="Enter admin passcode" autocomplete="current-password" required>
+                    <button type="button" id="togglePasswordBtn" class="toggle-pwd-btn" title="Show/Hide passcode"><i class="far fa-eye"></i></button>
+                </div>
+                <button type="submit" id="loginSubmitBtn" class="auth-submit-btn">
+                    <span id="loginBtnText"><i class="fas fa-unlock"></i> Unlock Dashboard</span>
+                    <span id="loginBtnLoader" class="loader-spinner" style="display: none;"></span>
+                </button>
+                <div id="authErrorMessage" class="auth-error-msg"></div>
+            </form>
+            <div class="auth-footer-badge">
+                <i class="fas fa-lock"></i> Protected by Token Authorization & Anti-Spam Rate Limiting
+            </div>
+        </div>
+    </div>
+
+    <!-- Navigation Header -->
     <header>
         <nav class="navbar">
             <div class="brand-logo">
@@ -252,6 +424,7 @@
                 <li><button id="btnOpenAddModal" class="btn btn-primary" style="padding: 7px 15px; font-size: 13px;"><i class="fas fa-plus"></i> Add Walk-in Lead</button></li>
                 <li><button id="btnExportCsv" class="btn" style="background: #10b981; color: white; padding: 7px 15px; font-size: 13px;"><i class="fas fa-file-csv"></i> Export CSV</button></li>
                 <li><button onclick="refreshLeads()" class="btn" style="background: rgba(255,255,255,0.15); color: white; padding: 7px 14px; font-size: 13px;"><i class="fas fa-sync-alt"></i> Refresh</button></li>
+                <li><button id="btnLogoutAdmin" class="btn" style="background: #ef4444; color: white; padding: 7px 14px; font-size: 13px;"><i class="fas fa-lock"></i> Lock Portal</button></li>
             </ul>
         </nav>
     </header>
@@ -264,8 +437,13 @@
                 <h1><i class="fas fa-users-cog" style="color: var(--primary);"></i> Student Enquiry & Lead Manager</h1>
                 <p style="color: #64748b; font-size: 14px; margin-top: 4px;">Track, call, and manage admission prospects for CBSE & ICSE classes in real-time.</p>
             </div>
-            <div id="dbIndicator" style="font-size: 13px; font-weight: 600; color: #059669;">
-                <i class="fas fa-circle" style="font-size: 10px;"></i> Live Connected
+            <div style="display: flex; gap: 10px; align-items: center;">
+                <span id="securityBadge" style="font-size: 12px; background: #dcfce7; color: #15803d; padding: 5px 12px; border-radius: 20px; font-weight: 700;">
+                    <i class="fas fa-shield-alt"></i> Secure Session Active
+                </span>
+                <div id="dbIndicator" style="font-size: 13px; font-weight: 600; color: #059669;">
+                    <i class="fas fa-circle" style="font-size: 10px;"></i> Live Connected
+                </div>
             </div>
         </div>
 

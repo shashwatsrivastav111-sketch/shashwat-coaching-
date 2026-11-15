@@ -11,13 +11,19 @@
 - **Dual-Sync Backend**: Submissions are also saved to your local MongoDB database / Admin Portal in parallel.
 - **Fail-safe Lead Guarantee**: If the network connection is ever interrupted, the form provides a 1-click **WhatsApp instant transfer** so prospective student inquiries are never lost!
 
-### 2. 🛡️ Staff & Admin Lead Manager (`admin.html`)
-- **Real-time Leads Table**: View all prospective students and inquiries.
+### 2. 🛡️ Staff & Admin Lead Manager (`admin.html`) [Secured]
+- **Authentication Gate**: All student contact details, phone numbers, and queries are locked behind an admin passcode (`shashwat@2026`, configurable via `ADMIN_SECRET` in `.env`).
+- **Token-Based API Authorization**: Every data read (`GET`), update (`PATCH`), and deletion (`DELETE`) on student records requires a valid Bearer token.
+- **Inactivity Auto-Lock**: Automatically locks the portal after 15 minutes of inactivity to safeguard student data from unauthorized walk-ins.
+- **Anti-Spam Rate Limiting**: Throttles bot flooding to max 15 submissions per 15 minutes per IP.
+- **Input Sanitization**: Automatically scrubs HTML/scripts to prevent stored Cross-Site Scripting (XSS).
+- **Security Headers**: Includes `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff`, and `X-XSS-Protection`.
 - **One-Click Actions**:
   - 📞 **Direct Call Button**: Dial student/parent immediately.
   - 💬 **WhatsApp Quick Chat**: Open pre-filled WhatsApp conversation addressing the student by name.
   - 🔄 **Status Selector**: Dynamically update student status from *New* to *Demo Scheduled* or *Enrolled*.
   - 🗑️ **Delete Option**: Clean up duplicate or closed leads.
+  - 📥 **Export CSV**: Download student contact records into an Excel-ready spreadsheet.
 - **Search & Filter Tabs**: Filter leads by status or search by student name/phone number.
 
 ### 3. 📢 Coaching Notice Board & Live Announcements

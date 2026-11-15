@@ -2,6 +2,7 @@ const express = require("express");
 const router = express.Router();
 const Enquiry = require("../models/Enquiry");
 const mongoose = require("mongoose");
+const { verifyAdmin } = require("../middleware/auth");
 
 // In-memory fallback in case MongoDB credentials are not yet configured
 let memoryEnquiries = [];
@@ -9,8 +10,17 @@ let memoryEnquiries = [];
 // Helper to check if DB is connected
 const isDbConnected = () => mongoose.connection.readyState === 1;
 
+// Basic sanitization helper to prevent XSS
+const sanitize = (str) => {
+    if (typeof str !== "string") return "";
+    return str
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .trim();
+};
+
 // @route   POST /api/enquiries
-// @desc    Submit a new enquiry
+// @desc    Submit a new enquiry (Public, with validation & sanitization)
 router.post("/", async (req, res) => {
     try {
         const { name, phone, email, classLevel, board, message } = req.body;
@@ -18,17 +28,31 @@ router.post("/", async (req, res) => {
         if (!name || !phone) {
             return res.status(400).json({
                 success: false,
-                error: "Please provide both name and phone number."
+                error: "Please provide both student/parent name and mobile number."
             });
         }
 
+        const cleanPhone = phone.toString().replace(/\D/g, "");
+        if (cleanPhone.length < 10) {
+            return res.status(400).json({
+                success: false,
+                error: "Please enter a valid 10-digit mobile number."
+            });
+        }
+
+        const sanitizedName = sanitize(name);
+        const sanitizedEmail = email ? sanitize(email) : "";
+        const sanitizedMessage = message ? sanitize(message) : "";
+        const sanitizedClass = classLevel ? sanitize(classLevel) : "Class 10";
+        const sanitizedBoard = board ? sanitize(board) : "CBSE";
+
         const enquiryData = {
-            name: name.trim(),
-            phone: phone.trim(),
-            email: email ? email.trim() : "",
-            classLevel: classLevel || "Class 10",
-            board: board || "CBSE",
-            message: message ? message.trim() : "",
+            name: sanitizedName,
+            phone: cleanPhone,
+            email: sanitizedEmail,
+            classLevel: sanitizedClass,
+            board: sanitizedBoard,
+            message: sanitizedMessage,
             status: "New",
             createdAt: new Date()
         };
@@ -49,7 +73,7 @@ router.post("/", async (req, res) => {
             memoryEnquiries.unshift(mockEnquiry);
             return res.status(201).json({
                 success: true,
-                message: "Enquiry received successfully! (Saved in session buffer - MongoDB connecting)",
+                message: "Enquiry received successfully! (Saved in session buffer)",
                 data: mockEnquiry,
                 dbStatus: "MongoDB not connected yet"
             });
@@ -64,8 +88,8 @@ router.post("/", async (req, res) => {
 });
 
 // @route   GET /api/enquiries
-// @desc    Get all enquiries (for Admin)
-router.get("/", async (req, res) => {
+// @desc    Get all enquiries (Protected: Admin Only)
+router.get("/", verifyAdmin, async (req, res) => {
     try {
         const { status } = req.query;
 
@@ -99,16 +123,20 @@ router.get("/", async (req, res) => {
 });
 
 // @route   PATCH /api/enquiries/:id
-// @desc    Update enquiry status or notes
-router.patch("/:id", async (req, res) => {
+// @desc    Update enquiry status or notes (Protected: Admin Only)
+router.patch("/:id", verifyAdmin, async (req, res) => {
     try {
         const { id } = req.params;
         const { status, notes } = req.body;
 
+        const updateFields = {};
+        if (status) updateFields.status = sanitize(status);
+        if (notes !== undefined) updateFields.notes = sanitize(notes);
+
         if (isDbConnected()) {
             const updated = await Enquiry.findByIdAndUpdate(
                 id,
-                { ...(status && { status }), ...(notes !== undefined && { notes }) },
+                updateFields,
                 { new: true }
             );
 
@@ -122,8 +150,8 @@ router.patch("/:id", async (req, res) => {
             if (index === -1) {
                 return res.status(404).json({ success: false, error: "Enquiry not found in memory" });
             }
-            if (status) memoryEnquiries[index].status = status;
-            if (notes !== undefined) memoryEnquiries[index].notes = notes;
+            if (status) memoryEnquiries[index].status = updateFields.status;
+            if (notes !== undefined) memoryEnquiries[index].notes = updateFields.notes;
 
             return res.json({ success: true, data: memoryEnquiries[index] });
         }
@@ -133,8 +161,8 @@ router.patch("/:id", async (req, res) => {
 });
 
 // @route   DELETE /api/enquiries/:id
-// @desc    Delete an enquiry
-router.delete("/:id", async (req, res) => {
+// @desc    Delete an enquiry (Protected: Admin Only)
+router.delete("/:id", verifyAdmin, async (req, res) => {
     try {
         const { id } = req.params;
 

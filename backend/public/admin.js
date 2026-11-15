@@ -2,10 +2,15 @@ const API_BASE_URL = window.location.protocol.startsWith("http")
     ? (window.location.port === "5001" ? "/api" : "http://localhost:5001/api")
     : "http://localhost:5001/api";
 
+const TOKEN_KEY = "shashwat_admin_token";
+const INACTIVITY_TIMEOUT = 15 * 60 * 1000; // 15 minutes auto-lock
+
 let allLeads = [];
 let currentFilter = "All";
 let searchQuery = "";
+let inactivityTimer = null;
 
+// DOM Elements
 const leadsTableBody = document.getElementById("leadsTableBody");
 const searchInput = document.getElementById("searchInput");
 const metricTotal = document.getElementById("metricTotal");
@@ -14,48 +19,181 @@ const metricEnrolled = document.getElementById("metricEnrolled");
 const countAll = document.getElementById("countAll");
 const countNew = document.getElementById("countNew");
 const dbIndicator = document.getElementById("dbIndicator");
+const securityBadge = document.getElementById("securityBadge");
 
-// Mock sample leads if backend is completely offline
-const sampleLeads = [
-    {
-        _id: "demo1",
-        name: "Aman Verma",
-        phone: "9876543210",
-        email: "aman.verma@gmail.com",
-        classLevel: "Class 10",
-        board: "CBSE",
-        message: "Need help with Physics numericals and Math trigonometry before pre-boards.",
-        status: "New",
-        createdAt: new Date().toISOString()
-    },
-    {
-        _id: "demo2",
-        name: "Shreya Gupta",
-        phone: "9451234567",
-        email: "shreya.g@yahoo.com",
-        classLevel: "Class 11 (Science)",
-        board: "ICSE",
-        message: "Enquiring for PCM evening batch and fee structure.",
-        status: "Contacted",
-        createdAt: new Date(Date.now() - 86400000).toISOString()
-    },
-    {
-        _id: "demo3",
-        name: "Vikram Yadav",
-        phone: "9123456789",
-        email: "",
-        classLevel: "Class 9",
-        board: "CBSE",
-        message: "Want to book a 2-day free demo class this Saturday.",
-        status: "Demo Scheduled",
-        createdAt: new Date(Date.now() - 172800000).toISOString()
+// Auth Overlay Elements
+const adminAuthOverlay = document.getElementById("adminAuthOverlay");
+const adminLoginForm = document.getElementById("adminLoginForm");
+const adminPasswordInput = document.getElementById("adminPasswordInput");
+const togglePasswordBtn = document.getElementById("togglePasswordBtn");
+const authErrorMessage = document.getElementById("authErrorMessage");
+const loginSubmitBtn = document.getElementById("loginSubmitBtn");
+const loginBtnText = document.getElementById("loginBtnText");
+const loginBtnLoader = document.getElementById("loginBtnLoader");
+const btnLogoutAdmin = document.getElementById("btnLogoutAdmin");
+
+// 1. Authentication & Security Gate
+function getAdminToken() {
+    return sessionStorage.getItem(TOKEN_KEY);
+}
+
+function setAdminToken(token) {
+    sessionStorage.setItem(TOKEN_KEY, token);
+}
+
+function removeAdminToken() {
+    sessionStorage.removeItem(TOKEN_KEY);
+}
+
+function showAuthScreen(errorText) {
+    if (adminAuthOverlay) {
+        adminAuthOverlay.style.display = "flex";
+        if (adminPasswordInput) {
+            adminPasswordInput.value = "";
+            adminPasswordInput.focus();
+        }
     }
-];
+    if (errorText && authErrorMessage) {
+        authErrorMessage.textContent = errorText;
+        authErrorMessage.style.display = "block";
+    }
+    if (securityBadge) {
+        securityBadge.style.background = "#fee2e2";
+        securityBadge.style.color = "#b91c1c";
+        securityBadge.innerHTML = '<i class="fas fa-lock"></i> Locked';
+    }
+}
 
-// Fetch Leads from Backend
+function hideAuthScreen() {
+    if (adminAuthOverlay) {
+        adminAuthOverlay.style.display = "none";
+    }
+    if (authErrorMessage) {
+        authErrorMessage.style.display = "none";
+    }
+    if (securityBadge) {
+        securityBadge.style.background = "#dcfce7";
+        securityBadge.style.color = "#15803d";
+        securityBadge.innerHTML = '<i class="fas fa-shield-alt"></i> Secure Session Active';
+    }
+    resetInactivityTimer();
+}
+
+function logoutAdmin(reason) {
+    removeAdminToken();
+    allLeads = [];
+    renderLeads();
+    showAuthScreen(reason || "Session locked. Enter passcode to resume.");
+}
+
+// Inactivity Auto-Lock
+function resetInactivityTimer() {
+    if (inactivityTimer) clearTimeout(inactivityTimer);
+    if (getAdminToken()) {
+        inactivityTimer = setTimeout(() => {
+            logoutAdmin("Session locked due to 15 minutes of inactivity for student data protection.");
+        }, INACTIVITY_TIMEOUT);
+    }
+}
+
+["mousedown", "keydown", "scroll", "touchstart"].forEach(event => {
+    window.addEventListener(event, resetInactivityTimer, { passive: true });
+});
+
+// Toggle password visibility
+if (togglePasswordBtn && adminPasswordInput) {
+    togglePasswordBtn.addEventListener("click", () => {
+        const isPassword = adminPasswordInput.type === "password";
+        adminPasswordInput.type = isPassword ? "text" : "password";
+        const icon = togglePasswordBtn.querySelector("i");
+        if (icon) {
+            icon.className = isPassword ? "far fa-eye-slash" : "far fa-eye";
+        }
+    });
+}
+
+// Handle Admin Login
+if (adminLoginForm) {
+    adminLoginForm.addEventListener("submit", async (e) => {
+        e.preventDefault();
+        const password = adminPasswordInput.value.trim();
+
+        if (!password) {
+            authErrorMessage.textContent = "Please enter your passcode.";
+            authErrorMessage.style.display = "block";
+            return;
+        }
+
+        // Loading state
+        loginSubmitBtn.disabled = true;
+        loginBtnText.style.display = "none";
+        loginBtnLoader.style.display = "inline-block";
+        authErrorMessage.style.display = "none";
+
+        try {
+            const res = await fetch(`${API_BASE_URL}/admin/login`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ password })
+            });
+
+            const data = await res.json();
+
+            if (res.ok && data.success && data.token) {
+                setAdminToken(data.token);
+                hideAuthScreen();
+                fetchLeads();
+            } else {
+                authErrorMessage.textContent = data.error || "Incorrect passcode. Access denied.";
+                authErrorMessage.style.display = "block";
+            }
+        } catch (err) {
+            // Local preview fallback if server is offline
+            if (password === "shashwat@2026") {
+                setAdminToken("shashwat@2026");
+                hideAuthScreen();
+                fetchLeads();
+            } else {
+                authErrorMessage.textContent = "Incorrect passcode or local server offline.";
+                authErrorMessage.style.display = "block";
+            }
+        } finally {
+            loginSubmitBtn.disabled = false;
+            loginBtnText.style.display = "inline";
+            loginBtnLoader.style.display = "none";
+        }
+    });
+}
+
+// Lock / Logout Button
+if (btnLogoutAdmin) {
+    btnLogoutAdmin.addEventListener("click", () => {
+        if (confirm("Lock the admin portal to protect student records?")) {
+            logoutAdmin("Portal locked. Enter passcode to access student data.");
+        }
+    });
+}
+
+// 2. Fetch Leads with Authorization Header
 async function fetchLeads() {
+    const token = getAdminToken();
+    if (!token) {
+        showAuthScreen();
+        return;
+    }
+
     try {
-        const res = await fetch(`${API_BASE_URL}/enquiries`);
+        const res = await fetch(`${API_BASE_URL}/enquiries`, {
+            headers: {
+                "Authorization": `Bearer ${token}`
+            }
+        });
+
+        if (res.status === 401 || res.status === 403) {
+            logoutAdmin("Session unauthorized or expired. Please re-enter passcode.");
+            return;
+        }
+
         if (!res.ok) throw new Error("Backend response error");
 
         const data = await res.json();
@@ -65,15 +203,12 @@ async function fetchLeads() {
                 dbIndicator.innerHTML = '<i class="fas fa-circle" style="font-size: 10px; color: #10b981;"></i> Backend Connected';
             }
         } else {
-            allLeads = sampleLeads;
+            allLeads = [];
         }
     } catch (err) {
-        console.warn("Backend offline, displaying demo buffer leads:", err.message);
-        if (allLeads.length === 0) {
-            allLeads = sampleLeads;
-        }
+        console.warn("Backend offline or unreachable:", err.message);
         if (dbIndicator) {
-            dbIndicator.innerHTML = '<i class="fas fa-circle" style="font-size: 10px; color: #f59e0b;"></i> Local Preview Mode';
+            dbIndicator.innerHTML = '<i class="fas fa-circle" style="font-size: 10px; color: #f59e0b;"></i> Offline / Buffer Mode';
         }
     }
 
@@ -81,7 +216,7 @@ async function fetchLeads() {
     renderLeads();
 }
 
-// Update Top Metric Counters
+// 3. Update Top Metric Counters
 function updateMetrics() {
     const total = allLeads.length;
     const newCount = allLeads.filter(l => l.status === "New").length;
@@ -94,7 +229,7 @@ function updateMetrics() {
     if (countNew) countNew.textContent = newCount;
 }
 
-// Render Filtered and Searched Leads
+// 4. Render Filtered and Searched Leads
 function renderLeads() {
     if (!leadsTableBody) return;
 
@@ -120,7 +255,7 @@ function renderLeads() {
             <tr>
                 <td colspan="7" class="empty-state">
                     <i class="fas fa-inbox"></i>
-                    <p>No enquiries found for this filter.</p>
+                    <p>No enquiries found.</p>
                 </td>
             </tr>
         `;
@@ -179,17 +314,31 @@ function renderLeads() {
     }).join("");
 }
 
-// Update Status (PATCH)
+// 5. Update Status (Protected PATCH)
 async function updateLeadStatus(id, newStatus) {
+    const token = getAdminToken();
+    if (!token) {
+        showAuthScreen();
+        return;
+    }
+
     try {
         const lead = allLeads.find(l => l._id === id);
         if (lead) lead.status = newStatus;
 
-        await fetch(`${API_BASE_URL}/enquiries/${id}`, {
+        const res = await fetch(`${API_BASE_URL}/enquiries/${id}`, {
             method: "PATCH",
-            headers: { "Content-Type": "application/json" },
+            headers: { 
+                "Content-Type": "application/json",
+                "Authorization": `Bearer ${token}`
+            },
             body: JSON.stringify({ status: newStatus })
         });
+
+        if (res.status === 401 || res.status === 403) {
+            logoutAdmin("Session expired. Please log in again.");
+            return;
+        }
 
         updateMetrics();
         renderLeads();
@@ -198,15 +347,30 @@ async function updateLeadStatus(id, newStatus) {
     }
 }
 
-// Delete Lead (DELETE)
+// 6. Delete Lead (Protected DELETE)
 async function deleteLead(id) {
-    if (!confirm("Are you sure you want to remove this lead?")) return;
+    const token = getAdminToken();
+    if (!token) {
+        showAuthScreen();
+        return;
+    }
+
+    if (!confirm("Are you sure you want to permanently remove this student record?")) return;
 
     try {
         allLeads = allLeads.filter(l => l._id !== id);
-        await fetch(`${API_BASE_URL}/enquiries/${id}`, {
-            method: "DELETE"
+        const res = await fetch(`${API_BASE_URL}/enquiries/${id}`, {
+            method: "DELETE",
+            headers: {
+                "Authorization": `Bearer ${token}`
+            }
         });
+
+        if (res.status === 401 || res.status === 403) {
+            logoutAdmin("Session expired. Please log in again.");
+            return;
+        }
+
         updateMetrics();
         renderLeads();
     } catch (err) {
@@ -214,7 +378,7 @@ async function deleteLead(id) {
     }
 }
 
-// Search Filter Listener
+// 7. Search Filter Listener
 if (searchInput) {
     searchInput.addEventListener("input", (e) => {
         searchQuery = e.target.value;
@@ -222,7 +386,7 @@ if (searchInput) {
     });
 }
 
-// Filter Tab Buttons
+// 8. Filter Tab Buttons
 document.querySelectorAll(".filter-btn").forEach(btn => {
     btn.addEventListener("click", function() {
         document.querySelectorAll(".filter-btn").forEach(b => b.classList.remove("active"));
@@ -236,7 +400,7 @@ function refreshLeads() {
     fetchLeads();
 }
 
-// 7. Manual Lead Modal & Submission
+// 9. Manual Lead Modal & Submission
 const btnOpenAddModal = document.getElementById("btnOpenAddModal");
 const addLeadModal = document.getElementById("addLeadModal");
 const closeAddLeadModal = document.getElementById("closeAddLeadModal");
@@ -267,6 +431,7 @@ if (manualLeadForm) {
     manualLeadForm.addEventListener("submit", async (e) => {
         e.preventDefault();
 
+        const token = getAdminToken();
         const name = document.getElementById("manualName").value.trim();
         const phone = document.getElementById("manualPhone").value.trim();
         const classLevel = document.getElementById("manualClass").value;
@@ -286,21 +451,17 @@ if (manualLeadForm) {
         try {
             const res = await fetch(`${API_BASE_URL}/enquiries`, {
                 method: "POST",
-                headers: { "Content-Type": "application/json" },
+                headers: { 
+                    "Content-Type": "application/json",
+                    ...(token && { "Authorization": `Bearer ${token}` })
+                },
                 body: JSON.stringify(newLeadPayload)
             });
 
             const data = await res.json();
             if (data.success && data.data) {
-                // If created with custom status, ensure local copy reflects it
                 const leadToSave = { ...data.data, status };
                 allLeads.unshift(leadToSave);
-            } else {
-                allLeads.unshift({
-                    _id: "local_" + Date.now(),
-                    ...newLeadPayload,
-                    createdAt: new Date().toISOString()
-                });
             }
         } catch (err) {
             allLeads.unshift({
@@ -317,10 +478,15 @@ if (manualLeadForm) {
     });
 }
 
-// 8. Export Leads to CSV
+// 10. Export Leads to CSV (Protected)
 const btnExportCsv = document.getElementById("btnExportCsv");
 if (btnExportCsv) {
     btnExportCsv.addEventListener("click", () => {
+        if (!getAdminToken()) {
+            showAuthScreen("Please authenticate to export student data.");
+            return;
+        }
+
         if (allLeads.length === 0) {
             alert("No leads available to export.");
             return;
@@ -351,7 +517,13 @@ if (btnExportCsv) {
     });
 }
 
-// Load on page ready
+// 11. Page Initialization
 document.addEventListener("DOMContentLoaded", () => {
-    fetchLeads();
+    const existingToken = getAdminToken();
+    if (!existingToken) {
+        showAuthScreen();
+    } else {
+        hideAuthScreen();
+        fetchLeads();
+    }
 });
